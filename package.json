@@ -28,9 +28,11 @@
     "jsonwebtoken": "^9.0.2",
     "pdfkit": "^0.15.0",
     "typescript": "^5.9.3",
+    "ws": "^8.21.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "tsx": "^4.19.2"
   }
 }
