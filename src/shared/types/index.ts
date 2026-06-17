@@ -21,6 +21,7 @@ export interface ReciboComItens {
   numero_recibo: number;
   cliente_nome: string;
   usuario_id: string;
+  pdf_gerado_por: string | null;
   pdf_url: string | null;
   subtotal: number;
   total_tax: number;

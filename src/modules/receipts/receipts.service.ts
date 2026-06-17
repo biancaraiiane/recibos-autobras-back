@@ -81,7 +81,11 @@ export async function generatePDF(reciboId: string, userId: string): Promise<str
 
   await supabase
     .from('recibos')
-    .update({ pdf_url: urlData.publicUrl })
+    .update({
+      pdf_url: urlData.publicUrl,
+      pdf_gerado_por: userId,
+      data_hora_geracao: new Date().toISOString(),
+    })
     .eq('id', reciboId);
 
   return urlData.publicUrl;

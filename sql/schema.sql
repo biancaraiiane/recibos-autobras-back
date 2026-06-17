@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS recibos (
   numero_recibo       INTEGER UNIQUE NOT NULL DEFAULT nextval('recibos_numero_seq'),
   cliente_nome        TEXT NOT NULL,
   usuario_id          UUID REFERENCES usuarios(id) ON DELETE SET NULL,
+  pdf_gerado_por      UUID REFERENCES usuarios(id) ON DELETE SET NULL,
   pdf_url             TEXT,
   subtotal            NUMERIC(12,2) DEFAULT 0,
   total_tax           NUMERIC(12,2) DEFAULT 0,
