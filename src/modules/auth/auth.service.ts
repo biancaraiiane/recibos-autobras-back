@@ -7,11 +7,29 @@ import type { RegisterInput, LoginInput } from './auth.schema';
 import type { JwtPayload } from '../../shared/types';
 
 export async function registerUser(data: RegisterInput) {
-  const { data: existing } = await supabase
+  const email = data.email.trim().toLowerCase();
+
+  const { data: existing, error: existingError } = await supabase
     .from('usuarios')
     .select('id')
-    .eq('email', data.email)
+    .eq('email', email)
     .maybeSingle();
+
+  console.log('[REGISTER DEBUG] existing user check:', {
+    emailRecebido: data.email,
+    emailNormalizado: email,
+    encontrouUsuarioExistente: !!existing,
+    existingError,
+  });
+
+  if (existingError) {
+    console.log('[REGISTER ERROR] existingError:', existingError);
+
+    throw new AppError(
+      existingError.message || 'Erro ao verificar usuário existente',
+      500
+    );
+  }
 
   if (existing) {
     throw new AppError('E-mail já cadastrado', 409);
@@ -21,25 +39,64 @@ export async function registerUser(data: RegisterInput) {
 
   const { data: user, error } = await supabase
     .from('usuarios')
-    .insert({ nome: data.nome, email: data.email, senha_hash, cargo: data.cargo })
+    .insert({
+      nome: data.nome,
+      email,
+      senha_hash,
+      cargo: data.cargo ?? null,
+      ativo: true,
+    })
     .select('id, nome, email, cargo, ativo, criado_em')
     .single();
 
+  console.log('[REGISTER DEBUG] insert result:', {
+    criouUsuario: !!user,
+    user,
+    error,
+  });
+
   if (error || !user) {
-    throw new AppError('Erro ao criar usuário', 500);
+    console.log('[REGISTER ERROR] insert error:', error);
+
+    throw new AppError(
+      error?.message || 'Erro ao criar usuário',
+      500
+    );
   }
 
   return user;
 }
 
 export async function loginUser(data: LoginInput) {
+  const email = data.email.trim().toLowerCase();
+
   const { data: user, error } = await supabase
     .from('usuarios')
     .select('id, nome, email, cargo, ativo, senha_hash')
-    .eq('email', data.email)
+    .eq('email', email)
     .maybeSingle();
 
-  if (error || !user) {
+  console.log('[LOGIN DEBUG] user query:', {
+    emailRecebido: data.email,
+    emailNormalizado: email,
+    encontrouUsuario: !!user,
+    supabaseError: error,
+    ativo: user?.ativo,
+    hashExiste: !!user?.senha_hash,
+    hashPrefix: user?.senha_hash?.slice(0, 7),
+    hashLength: user?.senha_hash?.length,
+  });
+
+  if (error) {
+    console.log('[LOGIN ERROR] Supabase error:', error);
+
+    throw new AppError(
+      error.message || 'Erro ao buscar usuário',
+      500
+    );
+  }
+
+  if (!user) {
     throw new AppError('Credenciais inválidas', 401);
   }
 
@@ -47,7 +104,22 @@ export async function loginUser(data: LoginInput) {
     throw new AppError('Usuário inativo', 403);
   }
 
+  if (!user.senha_hash) {
+    console.log('[LOGIN ERROR] senha_hash vazio ou inexistente:', {
+      email,
+      userId: user.id,
+    });
+
+    throw new AppError('Credenciais inválidas', 401);
+  }
+
   const senhaValida = await bcrypt.compare(data.senha, user.senha_hash);
+
+  console.log('[LOGIN DEBUG] password compare:', {
+    email,
+    senhaValida,
+  });
+
   if (!senhaValida) {
     throw new AppError('Credenciais inválidas', 401);
   }
@@ -59,11 +131,18 @@ export async function loginUser(data: LoginInput) {
     cargo: user.cargo ?? undefined,
   };
 
-  const token = jwt.sign(payload, env.JWT_SECRET, { expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'] });
+  const token = jwt.sign(payload, env.JWT_SECRET, {
+    expiresIn: env.JWT_EXPIRES_IN as jwt.SignOptions['expiresIn'],
+  });
 
   return {
     token,
-    user: { id: user.id, nome: user.nome, email: user.email, cargo: user.cargo },
+    user: {
+      id: user.id,
+      nome: user.nome,
+      email: user.email,
+      cargo: user.cargo,
+    },
   };
 }
 
@@ -73,6 +152,12 @@ export async function getMe(userId: string) {
     .select('id, nome, email, cargo, ativo, criado_em')
     .eq('id', userId)
     .single();
+
+  console.log('[ME DEBUG]', {
+    userId,
+    encontrouUsuario: !!user,
+    error,
+  });
 
   if (error || !user) {
     throw new AppError('Usuário não encontrado', 404);
