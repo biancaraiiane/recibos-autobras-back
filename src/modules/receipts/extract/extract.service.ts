@@ -21,8 +21,12 @@ export interface ExtractResult {
 
 // ── Constantes ─────────────────────────────────────────────────────────────────
 
-// Ordem importa: termos mais específicos primeiro para evitar match parcial prematuro
-const SERVICE_KEYWORDS = [
+// Prefixos operacionais/geográficos que aparecem antes do ano no título
+// Ordem: mais longos primeiro para evitar match parcial ("sa" não engolir "satx")
+const LOCATION_PREFIXES = ['san antonio', 'austin', 'satx', 'atx', 'sa'];
+
+// Keywords base do serviço — mais específicos primeiro
+const SERVICE_BASE_KEYWORDS = [
   'front windshield',
   'rear windshield',
   'back glass',
@@ -34,53 +38,117 @@ const SERVICE_KEYWORDS = [
   'regulator',
 ];
 
-// ── Extratores ─────────────────────────────────────────────────────────────────
+// Sufixos opcionais que seguem o keyword do serviço
+const SERVICE_SUFFIXES = [
+  ' no sensor',
+  ' with sensor',
+  ' w/sensor',
+  ' w/ sensor',
+  ' sensor',
+];
 
-function extractVin(text: string): string {
-  // VIN: exatamente 17 caracteres alfanuméricos (sem I, O, Q no padrão real,
-  // mas OCR pode introduzir ruído — validamos só o comprimento)
-  const match = text.match(/\b[A-Za-z0-9]{17}\b/);
-  return match ? match[0].toUpperCase() : '';
+// ── Normalização ───────────────────────────────────────────────────────────────
+
+function normalizeLine(line: string): string {
+  return line.replace(/[ \t]+/g, ' ').trim();
 }
 
-function extractMainValue(text: string): number {
-  // Captura $NNN ou $NNN.NN que NÃO sejam precedidos por letra (ex: M$, P$)
-  const regex = /(?<![A-Za-z])\$(\d+(?:\.\d{1,2})?)/g;
-  const values: number[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = regex.exec(text)) !== null) {
-    values.push(parseFloat(m[1]));
+// ── Detecção de linha de título ────────────────────────────────────────────────
+
+function hasYear(line: string): boolean {
+  return /((?:19|20)\d{2})/.test(line);
+}
+
+function hasServiceKeyword(line: string): boolean {
+  const lower = line.toLowerCase();
+  return SERVICE_BASE_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+function findTitleLine(lines: string[]): string {
+  // Prioridade 1: linha com ano + keyword de serviço
+  for (const line of lines) {
+    if (hasYear(line) && hasServiceKeyword(line)) return line;
   }
-  if (values.length === 0) return 0;
-  // O maior valor standalone tende a ser o preço principal do serviço
-  return Math.max(...values);
+  // Prioridade 2: qualquer linha com ano
+  for (const line of lines) {
+    if (hasYear(line)) return line;
+  }
+  return lines[0] ?? '';
 }
 
-function extractFromTitle(line: string): { veiculo: string; descricao_servico: string } {
-  // Localiza o ano (19xx ou 20xx) — marca o início do bloco veículo
-  const yearMatch = line.match(/((?:19|20)\d{2})/);
+// ── Remoção de prefixo operacional ────────────────────────────────────────────
+
+function removeLocationPrefix(line: string): string {
+  const lower = line.toLowerCase();
+  for (const prefix of LOCATION_PREFIXES) {
+    // Só remove se o prefixo for seguido de espaço (evita match parcial em palavras)
+    if (
+      lower.startsWith(prefix) &&
+      lower.length > prefix.length &&
+      lower[prefix.length] === ' '
+    ) {
+      return line.slice(prefix.length).trim();
+    }
+  }
+  return line;
+}
+
+// ── Extração de serviço com sufixo opcional ────────────────────────────────────
+
+function extractServiceWithSuffix(text: string, kwStart: number, keyword: string): string {
+  const afterKw = text.slice(kwStart + keyword.length);
+  const lowerAfterKw = afterKw.toLowerCase();
+
+  let suffix = '';
+  for (const s of SERVICE_SUFFIXES) {
+    if (lowerAfterKw.startsWith(s)) {
+      suffix = afterKw.slice(0, s.length); // preserva casing original
+      break;
+    }
+  }
+
+  const raw = text.slice(kwStart, kwStart + keyword.length) + suffix;
+  return capitalize(raw.trim());
+}
+
+function capitalize(s: string): string {
+  if (!s) return '';
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// ── Extração de veículo + serviço da linha de título ─────────────────────────
+
+function extractFromTitle(titleLine: string): { veiculo: string; descricao_servico: string } {
+  if (!titleLine) return { veiculo: '', descricao_servico: '' };
+
+  // Remove prefixo geográfico/operacional
+  const cleanLine = removeLocationPrefix(titleLine);
+  const lower = cleanLine.toLowerCase();
+
+  // Localiza o ano
+  const yearMatch = cleanLine.match(/((?:19|20)\d{2})/);
 
   if (!yearMatch) {
-    // Sem ano: tenta encontrar serviço diretamente na linha
-    const lower = line.toLowerCase();
-    for (const kw of SERVICE_KEYWORDS) {
-      if (lower.includes(kw)) {
-        return { veiculo: '', descricao_servico: capitalize(kw) };
+    // Sem ano: tenta identificar só o serviço
+    for (const kw of SERVICE_BASE_KEYWORDS) {
+      const idx = lower.indexOf(kw);
+      if (idx !== -1) {
+        return { veiculo: '', descricao_servico: extractServiceWithSuffix(cleanLine, idx, kw) };
       }
     }
     return { veiculo: '', descricao_servico: '' };
   }
 
-  const yearStart = line.indexOf(yearMatch[1]);
-  // Tudo a partir do ano: "2010 Subaru Legacy front windshield"
-  const afterYear = line.slice(yearStart);
-  const lower = afterYear.toLowerCase();
+  const yearStart = cleanLine.indexOf(yearMatch[1]);
+  // Tudo a partir do ano: "2015 Ford Taurus Front windshield no sensor"
+  const afterYear = cleanLine.slice(yearStart);
+  const lowerAfter = afterYear.toLowerCase();
 
-  // Acha o keyword de serviço mais precoce dentro de afterYear
+  // Encontra o keyword de serviço mais precoce dentro de afterYear
   let serviceStart = -1;
   let foundKeyword = '';
-  for (const kw of SERVICE_KEYWORDS) {
-    const idx = lower.indexOf(kw);
+  for (const kw of SERVICE_BASE_KEYWORDS) {
+    const idx = lowerAfter.indexOf(kw);
     if (idx !== -1 && (serviceStart === -1 || idx < serviceStart)) {
       serviceStart = idx;
       foundKeyword = kw;
@@ -88,20 +156,39 @@ function extractFromTitle(line: string): { veiculo: string; descricao_servico: s
   }
 
   if (serviceStart > 0) {
-    // Veículo = tudo entre o ano e o serviço, sem espaços extras
     return {
       veiculo: afterYear.slice(0, serviceStart).trim(),
-      descricao_servico: capitalize(foundKeyword),
+      descricao_servico: extractServiceWithSuffix(afterYear, serviceStart, foundKeyword),
     };
   }
 
-  // Não achou serviço: assume as 3 primeiras palavras como veículo
+  // Serviço não encontrado na linha: usa 3 palavras como veículo
   const vehicleWords = afterYear.trim().split(/\s+/).slice(0, 3);
   return { veiculo: vehicleWords.join(' '), descricao_servico: '' };
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
+// ── Extração de VIN ───────────────────────────────────────────────────────────
+
+function extractVin(text: string): string {
+  // VIN padrão = 17 chars alfanuméricos; OCR pode retornar minúsculas
+  const match = text.match(/\b[A-Za-z0-9]{17}\b/);
+  return match ? match[0].toUpperCase() : '';
+}
+
+// ── Extração de valor principal ───────────────────────────────────────────────
+
+function extractMainValue(text: string): number {
+  // Captura $ (espaço opcional) + número
+  // Lookbehind negativo: ignora quando precedido de letra (M$, P$)
+  const regex = /(?<![A-Za-z])\$\s*(\d+(?:\.\d{1,2})?)/g;
+  const values: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(text)) !== null) {
+    values.push(parseFloat(m[1]));
+  }
+  if (values.length === 0) return 0;
+  // Maior valor standalone = preço principal do serviço
+  return Math.max(...values);
 }
 
 // ── Função principal ───────────────────────────────────────────────────────────
@@ -111,7 +198,7 @@ export async function extractFromImage(fileBuffer: Buffer): Promise<ExtractResul
 
   try {
     worker = await createWorker('eng');
-  } catch (err) {
+  } catch {
     throw new AppError('Falha ao inicializar OCR. Tente novamente.', 500);
   }
 
@@ -119,17 +206,20 @@ export async function extractFromImage(fileBuffer: Buffer): Promise<ExtractResul
     const { data } = await worker.recognize(fileBuffer);
     const rawText = data.text.trim();
 
+    console.log('[OCR RAW TEXT]', rawText);
+
     if (!rawText) {
-      return {
-        rawText: '',
-        items: [emptyItem()],
-      };
+      const item = emptyItem();
+      console.log('[OCR PARSED ITEM]', item);
+      return { rawText: '', items: [item] };
     }
 
-    // Primeira linha não vazia costuma ser o título do serviço
-    const lines = rawText.split('\n').map((l) => l.trim()).filter(Boolean);
-    const titleLine = lines[0] ?? '';
+    const lines = rawText
+      .split('\n')
+      .map(normalizeLine)
+      .filter(Boolean);
 
+    const titleLine = findTitleLine(lines);
     const { veiculo, descricao_servico } = extractFromTitle(titleLine);
     const vin = extractVin(rawText);
     const valor_unitario = extractMainValue(rawText);
@@ -145,8 +235,11 @@ export async function extractFromImage(fileBuffer: Buffer): Promise<ExtractResul
       valor_total: valor_unitario,
     };
 
+    console.log('[OCR PARSED ITEM]', item);
+
     return { rawText, items: [item] };
   } catch (err) {
+    if (err instanceof AppError) throw err;
     throw new AppError('Erro ao processar imagem com OCR.', 500);
   } finally {
     await worker.terminate();
