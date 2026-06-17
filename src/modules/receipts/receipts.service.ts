@@ -79,7 +79,7 @@ export async function generatePDF(reciboId: string, userId: string): Promise<str
     .from(env.STORAGE_BUCKET_PDFS)
     .getPublicUrl(storagePath);
 
-  await supabase
+  const { error: updateError } = await supabase
     .from('recibos')
     .update({
       pdf_url: urlData.publicUrl,
@@ -87,6 +87,10 @@ export async function generatePDF(reciboId: string, userId: string): Promise<str
       data_hora_geracao: new Date().toISOString(),
     })
     .eq('id', reciboId);
+
+  if (updateError) {
+    throw new AppError(`Erro ao salvar URL do PDF: ${updateError.message}`, 500);
+  }
 
   return urlData.publicUrl;
 }
