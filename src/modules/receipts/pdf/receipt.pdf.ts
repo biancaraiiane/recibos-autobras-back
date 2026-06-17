@@ -170,7 +170,7 @@ export function generateReceiptPDF(recibo: ReciboComItens): Promise<Buffer> {
       .font('Helvetica-Oblique')
       .fontSize(10)
       .fillColor('#8a98ad')
-      .text('Auto-generated', valueX, infoY, {
+      .text(String(recibo.numero_recibo), valueX, infoY, {
         width: infoW,
         align: 'right',
       });
