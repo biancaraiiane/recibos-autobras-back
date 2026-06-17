@@ -69,7 +69,13 @@ function findTitleLine(lines: string[]): string {
   for (const line of lines) {
     if (hasYear(line) && hasServiceKeyword(line)) return line;
   }
-  // Prioridade 2: qualquer linha com ano
+  // Prioridade 2: linha com ano seguida de linha com keyword de serviço
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (hasYear(lines[i]) && hasServiceKeyword(lines[i + 1])) {
+      return lines[i] + ' ' + lines[i + 1];
+    }
+  }
+  // Prioridade 3: qualquer linha com ano
   for (const line of lines) {
     if (hasYear(line)) return line;
   }
