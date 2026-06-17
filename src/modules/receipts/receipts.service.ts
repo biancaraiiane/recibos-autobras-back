@@ -99,7 +99,7 @@ export async function generatePDF(reciboId: string, userId: string): Promise<str
 export async function getReceiptById(reciboId: string): Promise<ReciboComItens> {
   const { data: recibo, error } = await supabase
     .from('recibos')
-    .select('*, itens_recibo(*)')
+    .select('*, itens_recibo(*), usuarios!usuario_id(nome, email)')
     .eq('id', reciboId)
     .single();
 
@@ -122,7 +122,7 @@ export async function listReceipts(query: ListReceiptsQuery, _requesterId: strin
   let q = supabase
     .from('recibos')
     .select(
-      'id, numero_recibo, cliente_nome, usuario_id, pdf_url, subtotal, total_tax, total, status, issue_date, due_date, data_hora_geracao, criado_em, usuarios(nome, email)',
+      'id, numero_recibo, cliente_nome, usuario_id, pdf_url, subtotal, total_tax, total, status, issue_date, due_date, data_hora_geracao, criado_em, usuarios!usuario_id(nome, email)',
       { count: 'exact' },
     )
     .order('criado_em', { ascending: false })
@@ -136,7 +136,7 @@ export async function listReceipts(query: ListReceiptsQuery, _requesterId: strin
 
   const { data, error, count } = await q;
 
-  if (error) throw new AppError('Erro ao listar recibos', 500);
+  if (error) throw new AppError(`Erro ao listar recibos: ${error.message}`, 500);
 
   return {
     data: data ?? [],
