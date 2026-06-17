@@ -4,7 +4,7 @@
   "description": "Backend para geração de recibos/invoices da Autobras",
   "main": "dist/server.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && cp -r src/assets dist/",
     "start": "node dist/server.js",
     "dev": "tsx watch src/server.ts",
     "lint": "eslint src --ext .ts"

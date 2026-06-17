@@ -1,315 +1,374 @@
 import PDFDocument from 'pdfkit';
+import fs from 'fs';
+import path from 'path';
 import type { ReciboComItens } from '../../../shared/types';
 
-const COLORS = {
-  primary: '#1a1a2e',
-  accent: '#c8a951',
-  lightGray: '#f5f5f5',
-  mediumGray: '#cccccc',
-  darkGray: '#555555',
+const C = {
+  navy: '#24364f',
+  blue: '#4f98d8',
+  dark: '#1f2937',
+  gray: '#64748b',
+  lightGray: '#d9e1ec',
   white: '#ffffff',
-  black: '#000000',
 };
 
-function formatCurrency(value: number): string {
-  return value.toFixed(2);
+function getLogoPath() {
+  const possiblePaths = [
+    path.join(process.cwd(), 'src/assets/logo-autobras.png'),
+    path.join(process.cwd(), 'dist/assets/logo-autobras.png'),
+    path.join(__dirname, '../../../assets/logo-autobras.png'),
+  ];
+
+  return possiblePaths.find((p) => fs.existsSync(p));
 }
 
-function formatDate(dateStr: string): string {
+function fmt(value: number): string {
+  return Number(value || 0).toFixed(2);
+}
+
+function fmtDate(dateStr?: string | null): string {
+  if (!dateStr) return '';
+
   const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  if (Number.isNaN(d.getTime())) {
+    return '';
+  }
+
+  return d.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+}
+
+function drawRightText(
+  doc: PDFKit.PDFDocument,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  options?: PDFKit.Mixins.TextOptions,
+) {
+  doc.text(text, x, y, {
+    width,
+    align: 'right',
+    ...options,
+  });
 }
 
 export function generateReceiptPDF(recibo: ReciboComItens): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 0,
+    });
+
     const chunks: Buffer[] = [];
 
     doc.on('data', (chunk: Buffer) => chunks.push(chunk));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    const pageWidth = doc.page.width - 100;
+    const pageW = doc.page.width;
+    const marginX = 50;
+    const contentW = pageW - marginX * 2;
 
-    // ── CABEÇALHO ──────────────────────────────────────────────────────────────
-    doc.rect(0, 0, doc.page.width, 130).fill(COLORS.primary);
+    // ─────────────────────────────────────────────
+    // HEADER
+    // ─────────────────────────────────────────────
 
-    // Logo placeholder (texto estilizado)
-    doc
-      .fillColor(COLORS.accent)
-      .fontSize(28)
-      .font('Helvetica-Bold')
-      .text('AUTOBRAS', 50, 35);
+    const logoPath = getLogoPath();
 
-    doc
-      .fillColor(COLORS.white)
-      .fontSize(10)
-      .font('Helvetica')
-      .text('AUTO GLASS', 50, 68);
-
-    // Título INVOICE
-    doc
-      .fillColor(COLORS.white)
-      .fontSize(36)
-      .font('Helvetica-Bold')
-      .text('INVOICE', 0, 30, { align: 'right', width: doc.page.width - 50 });
-
-    doc
-      .fillColor(COLORS.accent)
-      .fontSize(11)
-      .font('Helvetica')
-      .text('TAX INVOICE', 0, 72, { align: 'right', width: doc.page.width - 50 });
-
-    // ── INFO DA EMPRESA ────────────────────────────────────────────────────────
-    doc.fillColor(COLORS.black).fontSize(9).font('Helvetica');
-    const companyY = 150;
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(11)
-      .fillColor(COLORS.primary)
-      .text('Autobras LLC', 50, companyY);
-
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor(COLORS.darkGray)
-      .text('Henderson pass', 50, companyY + 16)
-      .text('San Antonio, United States', 50, companyY + 28)
-      .text('+1 210 589 0667', 50, companyY + 40);
-
-    // ── INVOICE DETAILS (direita) ──────────────────────────────────────────────
-    const rightCol = 370;
-    const detailBoxY = companyY - 5;
-
-    doc
-      .rect(rightCol - 10, detailBoxY, 215, 75)
-      .fillAndStroke(COLORS.lightGray, COLORS.mediumGray);
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(9)
-      .fillColor(COLORS.darkGray)
-      .text('INVOICE NO.', rightCol, detailBoxY + 8)
-      .text('ISSUE DATE', rightCol, detailBoxY + 26)
-      .text('DUE DATE', rightCol, detailBoxY + 44);
-
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor(COLORS.black)
-      .text(`#${String(recibo.numero_recibo).padStart(5, '0')}`, rightCol + 100, detailBoxY + 8)
-      .text(formatDate(recibo.issue_date), rightCol + 100, detailBoxY + 26)
-      .text(recibo.due_date ? formatDate(recibo.due_date) : 'Upon Receipt', rightCol + 100, detailBoxY + 44);
-
-    // ── BILL TO ────────────────────────────────────────────────────────────────
-    const billY = companyY + 70;
-
-    doc
-      .rect(50, billY, 220, 58)
-      .fillAndStroke(COLORS.lightGray, COLORS.mediumGray);
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(9)
-      .fillColor(COLORS.accent)
-      .text('BILL TO', 60, billY + 8);
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(10)
-      .fillColor(COLORS.primary)
-      .text(recibo.cliente_nome, 60, billY + 22);
-
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor(COLORS.darkGray)
-      .text('United States', 60, billY + 36);
-
-    // ── DIVISOR ────────────────────────────────────────────────────────────────
-    const tableStartY = billY + 80;
-
-    doc
-      .moveTo(50, tableStartY - 10)
-      .lineTo(doc.page.width - 50, tableStartY - 10)
-      .strokeColor(COLORS.mediumGray)
-      .lineWidth(0.5)
-      .stroke();
-
-    // ── CABEÇALHO DA TABELA ────────────────────────────────────────────────────
-    const colWidths = {
-      desc: pageWidth * 0.40,
-      qty: pageWidth * 0.08,
-      price: pageWidth * 0.17,
-      tax: pageWidth * 0.13,
-      amount: pageWidth * 0.17,
-    };
-
-    const cols = {
-      desc: 50,
-      qty: 50 + colWidths.desc,
-      price: 50 + colWidths.desc + colWidths.qty,
-      tax: 50 + colWidths.desc + colWidths.qty + colWidths.price,
-      amount: 50 + colWidths.desc + colWidths.qty + colWidths.price + colWidths.tax,
-    };
-
-    const headerHeight = 22;
-    doc
-      .rect(50, tableStartY, pageWidth, headerHeight)
-      .fill(COLORS.primary);
-
-    doc
-      .font('Helvetica-Bold')
-      .fontSize(8)
-      .fillColor(COLORS.white);
-
-    doc.text('DESCRIPTION', cols.desc + 4, tableStartY + 7, { width: colWidths.desc - 8 });
-    doc.text('QTY', cols.qty + 2, tableStartY + 7, { width: colWidths.qty - 4, align: 'center' });
-    doc.text('UNIT PRICE (USD)', cols.price + 2, tableStartY + 7, { width: colWidths.price - 4, align: 'right' });
-    doc.text('TAX', cols.tax + 2, tableStartY + 7, { width: colWidths.tax - 4, align: 'right' });
-    doc.text('AMOUNT (USD)', cols.amount + 2, tableStartY + 7, { width: colWidths.amount - 4, align: 'right' });
-
-    // ── LINHAS DA TABELA ────────────────────────────────────────────────────────
-    let currentY = tableStartY + headerHeight;
-    let rowIndex = 0;
-
-    for (const item of recibo.itens) {
-      const isEven = rowIndex % 2 === 0;
-      const lineHeight = item.veiculo || item.vin ? 38 : 22;
-
-      doc
-        .rect(50, currentY, pageWidth, lineHeight)
-        .fill(isEven ? COLORS.white : COLORS.lightGray);
-
+    if (logoPath) {
+      doc.image(logoPath, marginX, 34, {
+        width: 115,
+      });
+    } else {
       doc
         .font('Helvetica-Bold')
-        .fontSize(8.5)
-        .fillColor(COLORS.primary)
-        .text(item.descricao_servico, cols.desc + 4, currentY + 6, { width: colWidths.desc - 8 });
+        .fontSize(22)
+        .fillColor('#0b4edb')
+        .text('AUTOBRAS', marginX, 45);
+
+      doc
+        .font('Helvetica')
+        .fontSize(7)
+        .fillColor(C.gray)
+        .text('AUTOGLASS REPLACEMENT', marginX, 70);
+    }
+
+    doc
+      .font('Helvetica')
+      .fontSize(34)
+      .fillColor(C.dark)
+      .text('RECEIPT', marginX, 30, {
+        width: contentW,
+        align: 'right',
+      });
+
+    doc
+      .font('Helvetica')
+      .fontSize(12)
+      .fillColor(C.gray)
+      .text('TAX RECEIPT', marginX, 76, {
+        width: contentW,
+        align: 'right',
+      });
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(C.navy)
+      .text('Autobras LLC', marginX, 110, {
+        width: contentW,
+        align: 'right',
+      });
+
+    doc.font('Helvetica').fontSize(11).fillColor(C.navy);
+
+    drawRightText(doc, 'Henderson pass', marginX, 128, contentW);
+    drawRightText(doc, 'San Antonio', marginX, 146, contentW);
+    drawRightText(doc, 'United States', marginX, 164, contentW);
+    drawRightText(doc, '+1 210 589 0667', marginX, 198, contentW);
+
+    // ─────────────────────────────────────────────
+    // BILL TO + RECEIPT INFO
+    // ─────────────────────────────────────────────
+
+    const infoY = 250;
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(10)
+      .fillColor(C.gray)
+      .text('BILL TO', marginX, infoY);
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(12)
+      .fillColor(C.dark)
+      .text(recibo.cliente_nome, marginX, infoY + 22);
+
+    doc
+      .font('Helvetica')
+      .fontSize(11)
+      .fillColor(C.gray)
+      .text('United States', marginX, infoY + 40);
+
+    const labelX = 310;
+    const valueX = 445;
+    const infoW = pageW - marginX - valueX;
+
+    doc.font('Helvetica').fontSize(11).fillColor(C.gray);
+
+    doc.text('Receipt Nº:', labelX, infoY);
+    doc.text('Issue date:', labelX, infoY + 24);
+    doc.text('Due date:', labelX, infoY + 48);
+
+    doc
+      .font('Helvetica-Oblique')
+      .fontSize(10)
+      .fillColor('#8a98ad')
+      .text('Auto-generated', valueX, infoY, {
+        width: infoW,
+        align: 'right',
+      });
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(C.dark)
+      .text(fmtDate(recibo.issue_date), valueX, infoY + 24, {
+        width: infoW,
+        align: 'right',
+      });
+
+    doc
+      .font('Helvetica-Bold')
+      .fontSize(11)
+      .fillColor(C.dark)
+      .text(recibo.due_date ? fmtDate(recibo.due_date) : fmtDate(recibo.issue_date), valueX, infoY + 48, {
+        width: infoW,
+        align: 'right',
+      });
+
+    // Divider
+    const dividerY = 340;
+
+    doc
+      .moveTo(marginX, dividerY)
+      .lineTo(pageW - marginX, dividerY)
+      .strokeColor(C.lightGray)
+      .lineWidth(0.8)
+      .stroke();
+
+    // ─────────────────────────────────────────────
+    // TABLE
+    // ─────────────────────────────────────────────
+
+    const tableY = 372;
+    const headerH = 56;
+
+    const colW = {
+      desc: contentW * 0.47,
+      qty: contentW * 0.10,
+      price: contentW * 0.19,
+      tax: contentW * 0.12,
+      amount: contentW * 0.12,
+    };
+
+    const col = {
+      desc: marginX,
+      qty: marginX + colW.desc,
+      price: marginX + colW.desc + colW.qty,
+      tax: marginX + colW.desc + colW.qty + colW.price,
+      amount: marginX + colW.desc + colW.qty + colW.price + colW.tax,
+    };
+
+    doc.rect(marginX, tableY, contentW, headerH).fill(C.blue);
+
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(C.white);
+
+    doc.text('DESCRIPTION', col.desc + 12, tableY + 22, {
+      width: colW.desc - 20,
+    });
+
+    doc.text('QTY', col.qty, tableY + 22, {
+      width: colW.qty,
+      align: 'center',
+    });
+
+    doc.text('UNIT PRICE\n(USD)', col.price, tableY + 14, {
+      width: colW.price - 8,
+      align: 'right',
+    });
+
+    doc.text('TAX', col.tax, tableY + 22, {
+      width: colW.tax - 8,
+      align: 'right',
+    });
+
+    doc.text('AMOUNT\n(USD)', col.amount, tableY + 14, {
+      width: colW.amount - 12,
+      align: 'right',
+    });
+
+    let rowY = tableY + headerH + 12;
+
+    for (const item of recibo.itens) {
+      const rowH = item.veiculo || item.vin ? 88 : 38;
+
+      doc
+        .font('Helvetica')
+        .fontSize(11)
+        .fillColor(C.dark)
+        .text(item.descricao_servico, col.desc + 12, rowY, {
+          width: colW.desc - 20,
+        });
 
       if (item.veiculo) {
         doc
           .font('Helvetica')
-          .fontSize(7.5)
-          .fillColor(COLORS.darkGray)
-          .text(item.veiculo, cols.desc + 4, currentY + 18, { width: colWidths.desc - 8 });
+          .fontSize(9.5)
+          .fillColor(C.gray)
+          .text(item.veiculo, col.desc + 12, rowY + 18, {
+            width: colW.desc - 20,
+          });
       }
 
       if (item.vin) {
-        const vinY = item.veiculo ? currentY + 28 : currentY + 18;
         doc
           .font('Helvetica')
-          .fontSize(7)
-          .fillColor(COLORS.darkGray)
-          .text(`VIN: ${item.vin}`, cols.desc + 4, vinY, { width: colWidths.desc - 8 });
+          .fontSize(8.5)
+          .fillColor('#7c8ca5')
+          .text(`Vin: ${item.vin}`, col.desc + 12, rowY + 36, {
+            width: colW.desc - 20,
+          });
       }
 
       doc
         .font('Helvetica')
-        .fontSize(8.5)
-        .fillColor(COLORS.black);
+        .fontSize(11)
+        .fillColor(C.dark)
+        .text(String(item.quantidade), col.qty, rowY, {
+          width: colW.qty,
+          align: 'center',
+        });
 
-      doc.text(String(item.quantidade), cols.qty + 2, currentY + 6, { width: colWidths.qty - 4, align: 'center' });
-      doc.text(`$${formatCurrency(item.valor_unitario)}`, cols.price + 2, currentY + 6, { width: colWidths.price - 4, align: 'right' });
-      doc.text(`${Number(item.tax_percent).toFixed(2)}%`, cols.tax + 2, currentY + 6, { width: colWidths.tax - 4, align: 'right' });
+      doc.text(fmt(item.valor_unitario), col.price, rowY, {
+        width: colW.price - 8,
+        align: 'right',
+      });
 
-      doc
-        .font('Helvetica-Bold')
-        .text(`$${formatCurrency(item.valor_total)}`, cols.amount + 2, currentY + 6, { width: colWidths.amount - 4, align: 'right' });
+      const taxText =
+        Number(item.tax_percent) > 0
+          ? `${Number(item.tax_percent).toFixed(2)}%`
+          : '—';
 
-      // Linha separadora
-      doc
-        .moveTo(50, currentY + lineHeight)
-        .lineTo(doc.page.width - 50, currentY + lineHeight)
-        .strokeColor(COLORS.mediumGray)
-        .lineWidth(0.3)
-        .stroke();
+      doc.text(taxText, col.tax, rowY, {
+        width: colW.tax - 8,
+        align: 'right',
+      });
 
-      currentY += lineHeight;
-      rowIndex++;
+      doc.text(fmt(item.valor_total), col.amount, rowY, {
+        width: colW.amount - 12,
+        align: 'right',
+      });
+
+      rowY += rowH;
     }
 
-    // ── TOTAIS ─────────────────────────────────────────────────────────────────
-    const totalsX = cols.price;
-    const totalsWidth = colWidths.price + colWidths.tax + colWidths.amount;
-    currentY += 10;
+    // ─────────────────────────────────────────────
+    // TOTAL
+    // ─────────────────────────────────────────────
 
-    // Subtotal
+    rowY += 10;
+
     doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor(COLORS.darkGray)
-      .text('SUBTOTAL', totalsX, currentY, { width: totalsWidth - colWidths.amount - 4, align: 'right' })
-      .font('Helvetica')
-      .fillColor(COLORS.black)
-      .text(`$${formatCurrency(recibo.subtotal)}`, cols.amount + 2, currentY, { width: colWidths.amount - 4, align: 'right' });
-
-    currentY += 16;
-
-    // TAX total
-    doc
-      .font('Helvetica')
-      .fontSize(9)
-      .fillColor(COLORS.darkGray)
-      .text('TAX', totalsX, currentY, { width: totalsWidth - colWidths.amount - 4, align: 'right' })
-      .fillColor(COLORS.black)
-      .text(`$${formatCurrency(recibo.total_tax)}`, cols.amount + 2, currentY, { width: colWidths.amount - 4, align: 'right' });
-
-    currentY += 8;
-
-    // Linha antes do total
-    doc
-      .moveTo(totalsX, currentY)
-      .lineTo(doc.page.width - 50, currentY)
-      .strokeColor(COLORS.primary)
-      .lineWidth(1)
+      .moveTo(marginX, rowY)
+      .lineTo(pageW - marginX, rowY)
+      .strokeColor(C.dark)
+      .lineWidth(1.5)
       .stroke();
 
-    currentY += 8;
-
-    // TOTAL DUE
-    doc
-      .rect(totalsX, currentY, totalsWidth, 28)
-      .fill(COLORS.primary);
+    rowY += 22;
 
     doc
       .font('Helvetica-Bold')
-      .fontSize(10)
-      .fillColor(COLORS.white)
-      .text('TOTAL DUE (USD)', totalsX + 4, currentY + 8, { width: totalsWidth - colWidths.amount - 8, align: 'right' });
-
-    doc
-      .fillColor(COLORS.accent)
-      .fontSize(12)
-      .text(`$${formatCurrency(recibo.total)}`, cols.amount + 2, currentY + 7, { width: colWidths.amount - 4, align: 'right' });
-
-    currentY += 50;
-
-    // ── RODAPÉ ─────────────────────────────────────────────────────────────────
-    doc
-      .moveTo(50, currentY)
-      .lineTo(doc.page.width - 50, currentY)
-      .strokeColor(COLORS.mediumGray)
-      .lineWidth(0.5)
-      .stroke();
-
-    currentY += 12;
+      .fontSize(16)
+      .fillColor(C.dark)
+      .text('TOTAL DUE (USD)', marginX, rowY);
 
     doc
       .font('Helvetica-Bold')
-      .fontSize(9)
-      .fillColor(COLORS.primary)
-      .text('★  Lifetime labor warranty', 50, currentY, { align: 'center', width: pageWidth });
-
-    doc
-      .font('Helvetica')
-      .fontSize(8)
-      .fillColor(COLORS.darkGray)
-      .text('Thank you for choosing Autobras LLC — Auto Glass Specialists', 50, currentY + 16, {
-        align: 'center',
-        width: pageWidth,
+      .fontSize(26)
+      .fillColor(C.dark)
+      .text(fmt(recibo.total), marginX, rowY - 4, {
+        width: contentW,
+        align: 'right',
       });
+
+    rowY += 50;
+
+    doc
+      .moveTo(marginX, rowY)
+      .lineTo(pageW - marginX, rowY)
+      .strokeColor(C.lightGray)
+      .lineWidth(0.8)
+      .stroke();
+
+    // ─────────────────────────────────────────────
+    // FOOTER
+    // ─────────────────────────────────────────────
+
+    rowY += 24;
+
+    doc
+      .font('Helvetica-Oblique')
+      .fontSize(10)
+      .fillColor(C.gray)
+      .text('Lifetime labor warranty', marginX, rowY);
 
     doc.end();
   });
