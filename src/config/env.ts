@@ -9,7 +9,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, 'JWT_SECRET deve ter no mínimo 32 caracteres'),
   JWT_EXPIRES_IN: z.string().default('7d'),
   STORAGE_BUCKET_PDFS: z.string().default('autobras-pdfs'),
-  FRONTEND_URL: z.string().default('*'),
+  FRONTEND_URL: z.string().url('FRONTEND_URL inválida'),
 });
 
 const parsed = envSchema.safeParse(process.env);
